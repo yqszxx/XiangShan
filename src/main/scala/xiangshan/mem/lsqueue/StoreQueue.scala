@@ -307,8 +307,8 @@ class StoreQueue(implicit p: Parameters) extends XSModule with HasDCacheParamete
     )
 
     // do real fwd query (cam lookup in load_s1)
-    dataModule.io.needForward(i)(0) := canForward1 & vaddrModule.io.forwardMmask(i).asUInt
-    dataModule.io.needForward(i)(1) := canForward2 & vaddrModule.io.forwardMmask(i).asUInt
+    dataModule.io.needForward(i)(0) := canForward1 & paddrModule.io.forwardMmask(i).asUInt
+    dataModule.io.needForward(i)(1) := canForward2 & paddrModule.io.forwardMmask(i).asUInt
 
     vaddrModule.io.forwardMdata(i) := io.forward(i).vaddr
     paddrModule.io.forwardMdata(i) := io.forward(i).paddr

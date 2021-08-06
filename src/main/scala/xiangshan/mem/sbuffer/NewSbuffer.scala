@@ -423,13 +423,20 @@ class NewSbuffer(implicit p: Parameters) extends XSModule with HasSbufferConst {
     }
   }
 
+  XSPerfAccumulate("dcache_req_valid", io.dcache.req.valid)
+  XSPerfAccumulate("dcache_req_fire", io.dcache.req.fire())
+  XSPerfAccumulate("dcache_req_fire", io.dcache.req.fire())
+  XSPerfAccumulate("sbuffer_flush", sbuffer_state === x_drain_all)
+  XSPerfAccumulate("evenCanInsert", evenCanInsert)
+  XSPerfAccumulate("oddCanInsert", oddCanInsert)
+
   // ---------------------- Load Data Forward ---------------------
   val mismatch = Wire(Vec(LoadPipelineWidth, Bool()))
   XSPerfAccumulate("vaddr_match_failed", mismatch(0) || mismatch(1))
   for ((forward, i) <- io.forward.zipWithIndex) {
     val vtag_matches = VecInit(widthMap(w => vtag(w) === getVTag(forward.vaddr)))
     val ptag_matches = VecInit(widthMap(w => ptag(w) === getPTag(forward.paddr)))
-    val tag_matches = vtag_matches
+    val tag_matches = ptag_matches
     val tag_mismatch = RegNext(forward.valid) && VecInit(widthMap(w => 
       RegNext(vtag_matches(w)) =/= RegNext(ptag_matches(w)) && RegNext((validMask(w) || inflightMask(w)))
     )).asUInt.orR
