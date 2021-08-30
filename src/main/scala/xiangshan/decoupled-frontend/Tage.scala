@@ -31,22 +31,26 @@ import scala.math.min
 import scala.util.matching.Regex
 
 trait TageParams extends HasXSParameter with HasBPUParameter {
-  //                   Sets  Hist   Tag
-  val TableInfo = Seq(( 128*8,    2,    7),
-                      ( 128*8,    4,    7),
-                      ( 256*8,    8,    8),
-                      ( 256*8,   16,    8),
-                      ( 128*8,   32,    9),
-                      ( 128*8,   64,    9))
-                      // (  64,   64,   11),
-                      // (  64,  101,   12),
-                      // (  64,  160,   12),
-                      // (  64,  254,   13),
-                      // (  32,  403,   14),
-                      // (  32,  640,   15))
-  val BaseTableSize = 2048
-  val TageNTables = TableInfo.size // Number of tage tables
-  val UBitPeriod = 2048
+  //                      Sets  Hist   Tag
+  val TableInfo =  Seq(( 128*8,    2,    7),
+                       ( 128*8,    4,    7),
+                       ( 256*8,    8,    8),
+                       ( 256*8,   16,    8),
+                       ( 128*8,   32,    9),
+                       ( 128*8,   64,    9))
+                       // (  64,   64,   11),
+                       // (  64,  101,   12),
+                       // (  64,  160,   12),
+                       // (  64,  254,   13),
+                       // (  32,  403,   14),
+                       // (  32,  640,   15))
+
+  //                      Sets  Hist   Tag
+  val BankTableInfos = (0 until numBr).map(i =>
+    TableInfo.map{ case (s, h, t) => (s/(1 << i), h, t) }
+  )
+  val BankTageNTables = BankTableInfos.map(_.size) // Number of tage tables
+  val UBitPeriod = 256
   val TageBanks = numBr
   val TageCtrBits = 3
 
@@ -109,18 +113,20 @@ class TageUpdate(implicit p: Parameters) extends TageBundle {
   val u = UInt(2.W)
 }
 
-class TageMeta(implicit p: Parameters) extends XSBundle with TageParams{
-  val provider = ValidUndirectioned(UInt(log2Ceil(TageNTables).W))
-  val prednum = ValidUndirectioned(UInt(log2Ceil(TageNTables).W))
-  val altprednum = ValidUndirectioned(UInt(log2Ceil(TageNTables).W))
+class TageMeta(val bank: Int)(implicit p: Parameters)
+  extends XSBundle with TageParams with HasSCParameter 
+{
+  val provider = ValidUndirectioned(UInt(log2Ceil(BankTageNTables(bank)).W))
+  val prednum = ValidUndirectioned(UInt(log2Ceil(BankTageNTables(bank)).W))
+  val altprednum = ValidUndirectioned(UInt(log2Ceil(BankTageNTables(bank)).W))
   val altDiffers = Bool()
   val providerU = UInt(2.W)
-  val providerCtr = UInt(3.W)
+  val providerCtr = UInt(TageCtrBits.W)
   val basecnt = UInt(2.W)
   val predcnt = UInt(3.W)
   val altpredhit = Bool()
   val altpredcnt = UInt(3.W)
-  val allocate = ValidUndirectioned(UInt(log2Ceil(TageNTables).W))
+  val allocate = ValidUndirectioned(UInt(log2Ceil(BankTageNTables(bank)).W))
   val taken = Bool()
   val scMeta = new SCMeta(EnableSC, BankSCNTables(bank))
   val pred_cycle = UInt(64.W) // TODO: Use Option
@@ -412,7 +418,7 @@ class TageTable
     })
 
     val hit = hits.reduce(_||_)
-    val hit_idx = ParallelPriorityEncoder(hits)   //how to find the newest hit entry ?
+    val hit_idx = ParallelPriorityEncoder(hits)
 
     io.hit := hit
     io.ctr := ctrs(hit_idx)
@@ -538,8 +544,6 @@ class Tage(implicit p: Parameters) extends BaseTage {
   val s1_resps = MixedVecInit(bank_tables.map(b => VecInit(b.map(t => t.io.resp)))) 
 
   //val s1_bim = io.in.bits.resp_in(0).s1.preds
-  //val s1_bim = bt.io.out.resp.s1.preds
-  //val s1_base_meta = bt.io.out.s1_meta
   // val s2_bim = RegEnable(s1_bim, enable=io.s1_fire)
 
   val debug_pc_s0 = s0_pc
@@ -556,14 +560,13 @@ class Tage(implicit p: Parameters) extends BaseTage {
   val s1_providers     = Wire(MixedVec(BankTageNTables.map(n=>UInt(log2Ceil(n).W))))
   val s1_finalAltPreds = Wire(Vec(TageBanks, Bool()))
   val s1_providerUs    = Wire(Vec(TageBanks, UInt(2.W)))
-//  val s1_basecnts      = Wire(Vec(TageBanks, UInt(2.W)))
   val s1_providerCtrs  = Wire(Vec(TageBanks, UInt(TageCtrBits.W)))
-  val s1_prednums      = Wire(Vec(TageBanks, UInt(log2Ceil(TageNTables).W)))
-  val s1_altprednums   = Wire(Vec(TageBanks, UInt(log2Ceil(TageNTables).W)))
+  val s1_prednums      = Wire(MixedVec(BankTageNTables.map(n=>UInt(log2Ceil(n).W))))
+  val s1_altprednums   = Wire(MixedVec(BankTageNTables.map(n=>UInt(log2Ceil(n).W))))
   val s1_predcnts      = Wire(Vec(TageBanks, UInt(TageCtrBits.W)))
   val s1_altpredcnts   = Wire(Vec(TageBanks, UInt(TageCtrBits.W)))
   val s1_altpredhits   = Wire(Vec(TageBanks, Bool()))
-  val s1_basecnts      = Wire(Vec(numBr, UInt(2.W)))
+  val s1_basecnts      = Wire(Vec(TageBanks, UInt(2.W)))
 
   val s2_tageTakens    = RegEnable(s1_tageTakens, io.s1_fire)
   val s2_provideds     = RegEnable(s1_provideds, io.s1_fire)
@@ -596,12 +599,12 @@ class Tage(implicit p: Parameters) extends BaseTage {
 
   val updateMetas = update.meta.asTypeOf(MixedVec((0 until TageBanks).map(new TageMeta(_))))
 
-  val updateMask    = WireInit(0.U.asTypeOf(Vec(TageNTables, Vec(TageBanks, Bool()))))
-  val updateUMask   = WireInit(0.U.asTypeOf(Vec(TageNTables, Vec(TageBanks, Bool()))))
-  val updateTaken   = Wire(Vec(TageNTables, Vec(TageBanks, Bool())))
-  val updateAlloc   = Wire(Vec(TageNTables, Vec(TageBanks, Bool())))
-  val updateOldCtr  = Wire(Vec(TageNTables, Vec(TageBanks, UInt(TageCtrBits.W))))
-  val updateU       = Wire(Vec(TageNTables, Vec(TageBanks, UInt(2.W))))
+  val updateMask    = WireInit(0.U.asTypeOf(MixedVec(BankTageNTables.map(Vec(_, Bool())))))
+  val updateUMask   = WireInit(0.U.asTypeOf(MixedVec(BankTageNTables.map(Vec(_, Bool())))))
+  val updateTaken   = Wire(MixedVec(BankTageNTables.map(Vec(_, Bool()))))
+  val updateAlloc   = Wire(MixedVec(BankTageNTables.map(Vec(_, Bool()))))
+  val updateOldCtr  = Wire(MixedVec(BankTageNTables.map(Vec(_, UInt(TageCtrBits.W)))))
+  val updateU       = Wire(MixedVec(BankTageNTables.map(Vec(_, UInt(2.W)))))
   val updatebcnt    = Wire(Vec(TageBanks, UInt(2.W)))
   val baseupdate    = Wire(Vec(TageBanks,Bool()))
   updateTaken   := DontCare
@@ -642,27 +645,29 @@ class Tage(implicit p: Parameters) extends BaseTage {
     s1_providers(w)      := s1_provider
     s1_finalAltPreds(w)  := s1_finalAltPred
     s1_tageTakens(w)     := s1_tageTaken
-    s1_providerUs(w)     := s1_resps(s1_provider)(w).bits.u
-    s1_providerCtrs(w)   := s1_resps(s1_provider)(w).bits.ctr
+    s1_providerUs(w)     := s1_resps(w)(s1_provider).bits.u
+    s1_providerCtrs(w)   := s1_resps(w)(s1_provider).bits.ctr
     s1_prednums(w)       := s1_prednum
     s1_altprednums(w)    := s1_altprednum
-    s1_predcnts(w)       := s1_resps(s1_prednum)(w).bits.ctr
+    s1_predcnts(w)       := s1_resps(w)(s1_prednum).bits.ctr
     s1_altpredhits(w)    := s1_altpredhit
-    s1_altpredcnts(w)    := s1_resps(s1_altprednum)(w).bits.ctr
+    s1_altpredcnts(w)    := s1_resps(w)(s1_altprednum).bits.ctr
 
-    resp_meta(w).provider.valid := s2_provideds(w)
-    resp_meta(w).provider.bits  := s2_providers(w)
-    resp_meta(w).prednum.bits   := s2_prednums(w)
-    resp_meta(w).altprednum.bits:= s2_altprednums(w)
-    resp_meta(w).altDiffers     := s2_finalAltPreds(w) =/= s2_tageTakens(w)
-    resp_meta(w).providerU      := s2_providerUs(w)
-    resp_meta(w).providerCtr    := s2_providerCtrs(w)
-    resp_meta(w).predcnt        := s2_predcnts(w)
-    resp_meta(w).altpredcnt     := s2_altpredcnts(w)
-    resp_meta(w).altpredhit     := s2_altpredhits(w)
-    resp_meta(w).taken          := s2_tageTakens(w)
-    resp_meta(w).basecnt        := s2_basecnts(w)
-    resp_meta(w).pred_cycle     := GTimer()
+    resp_meta(w).provider.valid   := s2_provideds(w)
+    resp_meta(w).provider.bits    := s2_providers(w)
+    resp_meta(w).prednum.valid    := s2_provideds(w)
+    resp_meta(w).prednum.bits     := s2_prednums(w)
+    resp_meta(w).altprednum.valid := s2_altpredhits(w)
+    resp_meta(w).altprednum.bits  := s2_altprednums(w)
+    resp_meta(w).altDiffers       := s2_finalAltPreds(w) =/= s2_tageTakens(w)
+    resp_meta(w).providerU        := s2_providerUs(w)
+    resp_meta(w).providerCtr      := s2_providerCtrs(w)
+    resp_meta(w).predcnt          := s2_predcnts(w)
+    resp_meta(w).altpredcnt       := s2_altpredcnts(w)
+    resp_meta(w).altpredhit       := s2_altpredhits(w)
+    resp_meta(w).taken            := s2_tageTakens(w)
+    resp_meta(w).basecnt          := s2_basecnts(w)
+    resp_meta(w).pred_cycle       := GTimer()
 
     // Create a mask fo tables which did not hit our query, and also contain useless entries
     // and also uses a longer history than the provider
@@ -691,24 +696,24 @@ class Tage(implicit p: Parameters) extends BaseTage {
     when (updateValid) {
       when (updateMeta.provider.valid) {
         when (updateMisPred && up_altpredhit && (updateMeta.predcnt === 3.U || updateMeta.predcnt === 4.U)){
-        updateMask(up_altprednum)(w)   := true.B
-        updateUMask(up_altprednum)(w)  := false.B
-        updateTaken(up_altprednum)(w)  := isUpdateTaken
-        updateOldCtr(up_altprednum)(w) := updateMeta.altpredcnt
-        updateAlloc(up_altprednum)(w)  := false.B
+        updateMask(w)(up_altprednum)   := true.B
+        updateUMask(w)(up_altprednum)  := false.B
+        updateTaken(w)(up_altprednum)  := isUpdateTaken
+        updateOldCtr(w)(up_altprednum) := updateMeta.altpredcnt
+        updateAlloc(w)(up_altprednum)  := false.B
 
         }
-        updateMask(up_prednum)(w)   := true.B
-        updateUMask(up_prednum)(w)  := true.B
+        updateMask(w)(up_prednum)   := true.B
+        updateUMask(w)(up_prednum)  := true.B
 
-        updateU(up_prednum)(w) := // Mux((updateMeta.predcnt === 3.U || updateMeta.predcnt === 4.U), 0.U,
+        updateU(w)(up_prednum) := // Mux((updateMeta.predcnt === 3.U || updateMeta.predcnt === 4.U), 0.U,
                                 Mux(!updateMeta.altDiffers, updateMeta.providerU,
                                 Mux(updateMisPred, Mux(updateMeta.providerU === 0.U, 0.U, updateMeta.providerU - 1.U),
                                 Mux(updateMeta.providerU === 3.U, 3.U, updateMeta.providerU + 1.U))//)
         )
-        updateTaken(up_prednum)(w)  := isUpdateTaken
-        updateOldCtr(up_prednum)(w) := updateMeta.predcnt
-        updateAlloc(up_prednum)(w)  := false.B
+        updateTaken(w)(up_prednum)  := isUpdateTaken
+        updateOldCtr(w)(up_prednum) := updateMeta.predcnt
+        updateAlloc(w)(up_prednum)  := false.B
       }
     }
 
