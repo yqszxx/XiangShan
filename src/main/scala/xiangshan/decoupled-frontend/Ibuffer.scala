@@ -143,6 +143,8 @@ class Ibuffer(implicit p: Parameters) extends XSModule with HasCircularQueuePtrH
     head_vec := VecInit((0 until DecodeWidth).map(_.U.asTypeOf(new IbufPtr)))
     tail_vec := VecInit((0 until PredictWidth).map(_.U.asTypeOf(new IbufPtr)))
   }
+  io.full := !allowEnq
+
 
   io.full := !allowEnq
 

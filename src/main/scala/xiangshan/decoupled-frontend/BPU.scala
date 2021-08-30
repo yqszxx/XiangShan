@@ -23,6 +23,8 @@ import chisel3.util._
 import xiangshan._
 import utils._
 
+import scala.math.min
+
 trait HasBPUConst extends HasXSParameter with HasIFUConst {
   val MaxMetaLength = 1024 // TODO: Reduce meta length
   val MaxBasicBlockSize = 32
@@ -31,6 +33,11 @@ trait HasBPUConst extends HasXSParameter with HasIFUConst {
   val useBPD = true
   val useLHist = true
 
+  def BP_S1 = 1.U(2.W)
+  def BP_S2 = 2.U(2.W)
+  def BP_S3 = 3.U(2.W)
+
+  
   val debug = true
   val resetVector = 0x80000000L//TODO: set reset vec
   // TODO: Replace log2Up by log2Ceil
@@ -92,6 +99,14 @@ trait BPUUtils extends HasXSParameter {
   def getFallThroughAddr(start: UInt, carry: Bool, pft: UInt) = {
     val higher = start.head(VAddrBits-log2Ceil(PredictWidth)-instOffsetBits-1)
     Cat(Mux(carry, higher+1.U, higher), pft, 0.U(instOffsetBits.W))
+  }
+
+  def foldTag(tag: UInt, l: Int): UInt = {
+    val nChunks = (tag.getWidth + l - 1) / l
+    val chunks = (0 until nChunks).map { i => 
+      tag(min((i+1)*l, tag.getWidth)-1, i*l)
+    }
+    ParallelXOR(chunks)
   }
 }
 
@@ -330,7 +345,10 @@ class Predictor(implicit p: Parameters) extends XSModule with HasBPUConst {
 
   predictors.io.s3_fire := s3_fire
 
-  io.bpu_to_ftq.resp.valid := s1_valid && !io.ftq_to_bpu.redirect.valid
+  io.bpu_to_ftq.resp.valid :=
+    s1_valid && s2_components_ready && s2_ready ||
+    s2_fire && s2_redirect ||
+    s3_fire && s3_redirect
   io.bpu_to_ftq.resp.bits  := BpuToFtqBundle(predictors.io.out.resp)
   io.bpu_to_ftq.resp.bits.meta  := predictors.io.out.s3_meta
   io.bpu_to_ftq.resp.bits.s3.ghist  := s3_ghist
@@ -369,9 +387,13 @@ class Predictor(implicit p: Parameters) extends XSModule with HasBPUConst {
   val s2_correct_s1_ghist = s1_ghist =/= s2_predicted_ghist
   val s2_correct_s0_ghist_reg = s0_ghist_reg =/= s2_predicted_ghist
 
+  val previous_s1_pred_taken = RegEnable(resp.s1.real_taken_mask.asUInt.orR, init=false.B, enable=s1_fire)
+  val s2_pred_taken = resp.s2.real_taken_mask.asUInt.orR
+
   when(s2_fire) {
     when((s1_valid && (s1_pc =/= resp.s2.target || s2_correct_s1_ghist)) ||
-      !s1_valid && (s0_pc_reg =/= resp.s2.target || s2_correct_s0_ghist_reg)) {
+      !s1_valid && (s0_pc_reg =/= resp.s2.target || s2_correct_s0_ghist_reg) ||
+      previous_s1_pred_taken =/= s2_pred_taken) {
       s0_ghist := s2_predicted_ghist
       s2_redirect := true.B
       s0_pc := resp.s2.target
@@ -412,10 +434,14 @@ class Predictor(implicit p: Parameters) extends XSModule with HasBPUConst {
   val s3_correct_s1_ghist = s1_ghist =/= s3_predicted_ghist
   val s3_correct_s0_ghist_reg = s0_ghist_reg =/= s3_predicted_ghist
 
+  val previous_s2_pred_taken = RegEnable(resp.s2.real_taken_mask.asUInt.orR, init=false.B, enable=s2_fire)
+  val s3_pred_taken = resp.s3.real_taken_mask.asUInt.orR
+
   when(s3_fire) {
     when((s2_valid && (s2_pc =/= resp.s3.target || s3_correct_s2_ghist)) ||
       (!s2_valid && s1_valid && (s1_pc =/= resp.s3.target || s3_correct_s1_ghist)) ||
-      (!s2_valid && !s1_valid && (s0_pc_reg =/= resp.s3.target || s3_correct_s0_ghist_reg))) {
+      (!s2_valid && !s1_valid && (s0_pc_reg =/= resp.s3.target || s3_correct_s0_ghist_reg)) ||
+      previous_s2_pred_taken =/= s3_pred_taken) {
 
       s0_ghist := s3_predicted_ghist
       s3_redirect := true.B
