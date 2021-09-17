@@ -175,7 +175,10 @@ class Dispatch1(implicit p: Parameters) extends XSModule with HasExceptionNO {
     // override load delay ctrl signal with store set result
     if(StoreSetEnable) {
       // updatedUop(i).cf.loadWaitBit := lfst.io.lookup.rdata(i) // classic store set
-      updatedUop(i).cf.loadWaitBit := lfst.io.lookup.rdata(i) && !isStore(i) // store set lite
+      updatedUop(i).cf.loadWaitBit :=  Mux(io.csrCtrl.no_storeset_store_seq,
+        lfst.io.lookup.rdata(i) && !isStore(i),
+        lfst.io.lookup.rdata(i)
+      )
       updatedUop(i).cf.waitForSqIdx := lfst.io.lookup.sqIdx(i)
     } else {
       updatedUop(i).cf.loadWaitBit := io.fromRename(i).bits.cf.loadWaitBit && !isStore(i) // wait table does not require store to be delayed
