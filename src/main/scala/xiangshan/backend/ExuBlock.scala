@@ -54,7 +54,9 @@ class ExuBlockImp(outer: ExuBlock)(implicit p: Parameters) extends LazyModuleImp
     val redirect = Flipped(ValidIO(new Redirect))
     val flush = Input(Bool())
     // dispatch ports
-    val allocate = scheduler.io.allocate.cloneType
+    val allocPregs = scheduler.io.allocPregs.cloneType
+    val in = scheduler.io.in.cloneType
+    // val allocate = scheduler.io.allocate.cloneType
     // issue and wakeup ports
     val fastUopOut = scheduler.io.fastUopOut.cloneType
     val rfWriteback = scheduler.io.writeback.cloneType
@@ -68,7 +70,8 @@ class ExuBlockImp(outer: ExuBlock)(implicit p: Parameters) extends LazyModuleImp
   // IO for the scheduler
   scheduler.io.redirect <> io.redirect
   scheduler.io.flush <> io.flush
-  scheduler.io.allocate <> io.allocate
+  scheduler.io.allocPregs <> io.allocPregs
+  scheduler.io.in <> io.in
   scheduler.io.fastUopOut <> io.fastUopOut
   scheduler.io.writeback <> io.rfWriteback
   scheduler.io.fastUopIn <> io.fastUopIn

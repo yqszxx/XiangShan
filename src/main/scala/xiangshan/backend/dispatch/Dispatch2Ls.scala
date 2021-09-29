@@ -27,8 +27,6 @@ import xiangshan.backend.rename.BusyTableReadIO
 class Dispatch2Ls(implicit p: Parameters) extends XSModule {
   val io = IO(new Bundle() {
     val fromDq = Flipped(Vec(dpParams.LsDqDeqWidth, DecoupledIO(new MicroOp)))
-    val readIntRf = Vec(NRMemReadPorts, Output(UInt(PhyRegIdxWidth.W)))
-    val readFpRf = Vec(exuParameters.StuCnt, Output(UInt(PhyRegIdxWidth.W)))
     val readIntState = Vec(NRMemReadPorts, Flipped(new BusyTableReadIO))
     val readFpState = Vec(exuParameters.StuCnt, Flipped(new BusyTableReadIO))
     val enqIQCtrl = Vec(exuParameters.LsExuCnt, DecoupledIO(new MicroOp))
@@ -66,16 +64,6 @@ class Dispatch2Ls(implicit p: Parameters) extends XSModule {
   val readPort = Seq(0, 1, 2, 4)
   val firstStorePsrc2 = PriorityMux(storeCanAccept, io.fromDq.map(_.bits.psrc(1)))
   val secondStorePsrc2 = PriorityMux((1 until 4).map(i => Cat(storeCanAccept.take(i)).orR && storeCanAccept(i)), io.fromDq.drop(1).map(_.bits.psrc(1)))
-  for (i <- 0 until exuParameters.LsExuCnt) {
-    if (i < exuParameters.LduCnt) {
-      io.readIntRf(readPort(i)) := io.fromDq(indexVec(i)).bits.psrc(0)
-    }
-    else {
-      io.readFpRf(i - exuParameters.LduCnt) := io.fromDq(indexVec(i)).bits.psrc(1)
-      io.readIntRf(readPort(i)  ) := io.fromDq(indexVec(i)).bits.psrc(0)
-      io.readIntRf(readPort(i)+1) := io.fromDq(indexVec(i)).bits.psrc(1)
-    }
-  }
   // src1 always needs srcState but only store's src2 needs srcState
   for (i <- 0 until 4) {
     io.readIntState(i).req := io.fromDq(i).bits.psrc(0)

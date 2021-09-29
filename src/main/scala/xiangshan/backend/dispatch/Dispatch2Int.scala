@@ -26,7 +26,6 @@ import xiangshan.backend.rename.BusyTableReadIO
 class Dispatch2Int(implicit p: Parameters) extends XSModule {
   val io = IO(new Bundle() {
     val fromDq = Flipped(Vec(dpParams.IntDqDeqWidth, DecoupledIO(new MicroOp)))
-    val readRf = Vec(NRIntReadPorts - NRMemReadPorts, Output(UInt(PhyRegIdxWidth.W)))
     val readState = Vec(NRIntReadPorts - NRMemReadPorts, Flipped(new BusyTableReadIO))
     val enqIQCtrl = Vec(exuParameters.AluCnt, DecoupledIO(new MicroOp))
   })
@@ -47,9 +46,6 @@ class Dispatch2Int(implicit p: Parameters) extends XSModule {
       io.enqIQCtrl(i).valid := io.fromDq(i).valid && !jmpCanAccept
       io.fromDq(i).ready := io.enqIQCtrl(i).ready && !jmpCanAccept
     }
-
-    io.readRf(2*i) := io.enqIQCtrl(i).bits.psrc(0)
-    io.readRf(2*i + 1) := io.enqIQCtrl(i).bits.psrc(1)
 
     io.readState(2*i  ).req := io.fromDq(i).bits.psrc(0)
     io.readState(2*i+1).req := io.fromDq(i).bits.psrc(1)

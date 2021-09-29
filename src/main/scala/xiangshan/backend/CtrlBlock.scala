@@ -166,7 +166,8 @@ class CtrlBlock(implicit p: Parameters) extends XSModule
   with HasCircularQueuePtrHelper {
   val io = IO(new Bundle {
     val frontend = Flipped(new FrontendToCtrlIO)
-    val enqIQ = Vec(exuParameters.CriticalExuCnt, DecoupledIO(new MicroOp))
+    val allocPregs = Vec(RenameWidth, Output(new ResetPregStateReq))
+    val dispatch = Vec(3*dpParams.IntDqDeqWidth, DecoupledIO(new MicroOp))
     // from int block
     val exuRedirect = Vec(exuParameters.AluCnt + exuParameters.JmpCnt, Flipped(ValidIO(new ExuOutput)))
     val stIn = Vec(exuParameters.StuCnt, Flipped(ValidIO(new ExuInput)))
@@ -195,8 +196,6 @@ class CtrlBlock(implicit p: Parameters) extends XSModule
     // redirect out
     val redirect = ValidIO(new Redirect)
     val flush = Output(Bool())
-    val readIntRf = Vec(NRIntReadPorts, Output(UInt(PhyRegIdxWidth.W)))
-    val readFpRf = Vec(NRFpReadPorts, Output(UInt(PhyRegIdxWidth.W)))
     val debug_int_rat = Vec(32, Output(UInt(PhyRegIdxWidth.W)))
     val debug_fp_rat = Vec(32, Output(UInt(PhyRegIdxWidth.W)))
   })
@@ -204,8 +203,6 @@ class CtrlBlock(implicit p: Parameters) extends XSModule
   val decode = Module(new DecodeStage)
   val rename = Module(new Rename)
   val dispatch = Module(new Dispatch)
-  val intBusyTable = Module(new BusyTable(NRIntReadPorts, NRIntWritePorts))
-  val fpBusyTable = Module(new BusyTable(NRFpReadPorts, NRFpWritePorts))
   val redirectGen = Module(new RedirectGenerator)
 
   val robWbSize = NRIntWritePorts + NRFpWritePorts + exuParameters.StuCnt
@@ -276,7 +273,7 @@ class CtrlBlock(implicit p: Parameters) extends XSModule
   decode.io.csrCtrl := RegNext(io.csrCtrl)
 
 
-  val jumpInst = dispatch.io.enqIQCtrl(0).bits
+  val jumpInst = dispatch.io.dispatch(0).bits
   val jumpPcRead = io.frontend.fromFtq.getJumpPcRead
   io.jumpPc := jumpPcRead(jumpInst.cf.ftqPtr, jumpInst.cf.ftqOffset)
   val jumpTargetRead = io.frontend.fromFtq.target_read
@@ -300,31 +297,10 @@ class CtrlBlock(implicit p: Parameters) extends XSModule
   dispatch.io.enqRob <> rob.io.enq
   dispatch.io.enqLsq <> io.enqLsq
   dispatch.io.singleStep := false.B
-  dispatch.io.allocPregs.zipWithIndex.foreach { case (preg, i) =>
-    intBusyTable.io.allocPregs(i).valid := preg.isInt
-    fpBusyTable.io.allocPregs(i).valid := preg.isFp
-    intBusyTable.io.allocPregs(i).bits := preg.preg
-    fpBusyTable.io.allocPregs(i).bits := preg.preg
-  }
-  dispatch.io.enqIQCtrl := DontCare
-  io.enqIQ <> dispatch.io.enqIQCtrl
+  io.dispatch <> dispatch.io.dispatch
   dispatch.io.csrCtrl <> io.csrCtrl
   dispatch.io.storeIssue <> io.stIn
-  dispatch.io.readIntRf <> io.readIntRf
-  dispatch.io.readFpRf <> io.readFpRf
-
-  fpBusyTable.io.flush := flushReg
-  intBusyTable.io.flush := flushReg
-  for((wb, setPhyRegRdy) <- io.writeback.take(NRIntWritePorts).zip(intBusyTable.io.wbPregs)){
-    setPhyRegRdy.valid := wb.valid && wb.bits.uop.ctrl.rfWen
-    setPhyRegRdy.bits := wb.bits.uop.pdest
-  }
-  for((wb, setPhyRegRdy) <- io.writeback.drop(NRIntWritePorts).zip(fpBusyTable.io.wbPregs)){
-    setPhyRegRdy.valid := wb.valid && wb.bits.uop.ctrl.fpWen
-    setPhyRegRdy.bits := wb.bits.uop.pdest
-  }
-  intBusyTable.io.read <> dispatch.io.readIntState
-  fpBusyTable.io.read <> dispatch.io.readFpState
+  dispatch.io.allocPregs <> io.allocPregs
 
   rob.io.redirect <> stage2Redirect
   val exeWbResults = VecInit(io.writeback ++ io.stOut)

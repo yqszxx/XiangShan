@@ -186,7 +186,7 @@ class XSCoreImp(outer: XSCoreBase) extends LazyModuleImp(outer)
   val exuBlocks = outer.exuBlocks.map(_.module)
   val memScheduler = outer.memScheduler.module
 
-  val allWriteback = exuBlocks.map(_.io.fuWriteback).fold(Seq())(_ ++ _) ++ memBlock.io.writeback
+  val allWriteback = exuBlocks.flatMap(_.io.fuWriteback) ++ memBlock.io.writeback
 
   val intWriteback = allWriteback.zip(exuConfigs).filter(_._2.writeIntRf).map(_._1)
   require(exuConfigs.length == allWriteback.length, s"${exuConfigs.length} != ${allWriteback.length}")
@@ -233,43 +233,28 @@ class XSCoreImp(outer: XSCoreBase) extends LazyModuleImp(outer)
 
   ctrlBlock.io.csrCtrl <> csrioIn.customCtrl
   val redirectBlocks = exuBlocks.reverse.filter(_.fuConfigs.map(_._1).map(_.hasRedirect).reduce(_ || _))
-  ctrlBlock.io.exuRedirect <> redirectBlocks.map(_.io.fuExtra.exuRedirect).fold(Seq())(_ ++ _)
+  ctrlBlock.io.exuRedirect <> redirectBlocks.flatMap(_.io.fuExtra.exuRedirect)
   ctrlBlock.io.stIn <> memBlock.io.stIn
   ctrlBlock.io.stOut <> memBlock.io.stOut
   ctrlBlock.io.memoryViolation <> memBlock.io.memoryViolation
   ctrlBlock.io.enqLsq <> memBlock.io.enqLsq
   ctrlBlock.io.writeback <> rfWriteback
 
-  val allFastUop = exuBlocks.map(_.io.fastUopOut).fold(Seq())(_ ++ _) ++ memBlock.io.otherFastWakeup
+  val allFastUop = exuBlocks.flatMap(_.io.fastUopOut) ++ memBlock.io.otherFastWakeup
   val intFastUop = allFastUop.zip(exuConfigs).filter(_._2.writeIntRf).map(_._1)
   val fpFastUop = allFastUop.zip(exuConfigs).filter(_._2.writeFpRf).map(_._1)
   val intFastUop1 = outer.intArbiter.allConnections.map(c => intFastUop(c.head))
   val fpFastUop1 = outer.fpArbiter.allConnections.map(c => fpFastUop(c.head))
   val allFastUop1 = intFastUop1 ++ fpFastUop1
 
-  ctrlBlock.io.enqIQ <> exuBlocks(0).io.allocate ++ exuBlocks(1).io.allocate ++ memScheduler.io.allocate.take(4)
+  ctrlBlock.io.dispatch <> exuBlocks.flatMap(_.io.in) ++ memScheduler.io.in
 
-  val stdAllocate = memScheduler.io.allocate.takeRight(2)
-  val staAllocate = memScheduler.io.allocate.slice(2, 4)
-  stdAllocate.zip(staAllocate).zip(ctrlBlock.io.enqIQ.takeRight(2)).zipWithIndex.foreach{ case (((std, sta), enq), i) =>
-    std.valid := enq.valid && sta.ready
-    sta.valid := enq.valid && std.ready
-    std.bits := enq.bits
-    sta.bits := enq.bits
-    std.bits.ctrl.lsrc(0) := enq.bits.ctrl.lsrc(1)
-    std.bits.psrc(0) := enq.bits.psrc(1)
-    std.bits.srcState(0) := enq.bits.srcState(1)
-    std.bits.ctrl.srcType(0) := enq.bits.ctrl.srcType(1)
-    enq.ready := sta.ready && std.ready
-    XSPerfAccumulate(s"st_rs_not_ready_$i", enq.valid && !enq.ready)
-    XSPerfAccumulate(s"sta_rs_not_ready_$i", sta.valid && !sta.ready)
-    XSPerfAccumulate(s"std_rs_not_ready_$i", std.valid && !std.ready)
-  }
   memScheduler.io.extra.fpRfReadIn.get <> exuBlocks(1).io.scheExtra.fpRfReadOut.get
   memScheduler.io.extra.intRfReadIn.get <> exuBlocks(0).io.scheExtra.intRfReadOut.get
 
   memScheduler.io.redirect <> ctrlBlock.io.redirect
   memScheduler.io.flush <> ctrlBlock.io.flush
+  memScheduler.io.allocPregs <> ctrlBlock.io.allocPregs
   memBlock.io.issue <> memScheduler.io.issue
   // By default, instructions do not have exceptions when they enter the function units.
   memBlock.io.issue.map(_.bits.uop.clearExceptions())
@@ -285,6 +270,7 @@ class XSCoreImp(outer: XSCoreBase) extends LazyModuleImp(outer)
   exuBlocks.map(_.io).foreach { exu =>
     exu.redirect <> ctrlBlock.io.redirect
     exu.flush <> ctrlBlock.io.flush
+    exu.allocPregs <> ctrlBlock.io.allocPregs
     exu.rfWriteback <> rfWriteback
     exu.fastUopIn <> allFastUop1
     exu.scheExtra.jumpPc <> ctrlBlock.io.jumpPc
