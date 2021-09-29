@@ -46,8 +46,10 @@ class ExuBlock(
 class ExuBlockImp(outer: ExuBlock)(implicit p: Parameters) extends LazyModuleImp(outer) {
   val scheduler = outer.scheduler.module
 
-  val fuConfigs = outer.configs.map(c => (c._1, c._2))
+  val fuConfigs = outer.configs.map(c => (c._1, c._2)).filter(_._1.extendsExu)
   val fuBlock = Module(new FUBlock(fuConfigs))
+
+  val numOutFu = outer.configs.filterNot(_._1.extendsExu).map(_._2).sum
 
   val io = IO(new Bundle {
     // global control
@@ -56,8 +58,8 @@ class ExuBlockImp(outer: ExuBlock)(implicit p: Parameters) extends LazyModuleImp
     // dispatch ports
     val allocPregs = scheduler.io.allocPregs.cloneType
     val in = scheduler.io.in.cloneType
-    // val allocate = scheduler.io.allocate.cloneType
     // issue and wakeup ports
+    val issue = if (numOutFu > 0) Some(Vec(numOutFu, DecoupledIO(new ExuInput))) else None
     val fastUopOut = scheduler.io.fastUopOut.cloneType
     val rfWriteback = scheduler.io.writeback.cloneType
     val fastUopIn = scheduler.io.fastUopIn.cloneType
@@ -78,7 +80,7 @@ class ExuBlockImp(outer: ExuBlock)(implicit p: Parameters) extends LazyModuleImp
   scheduler.io.extra <> io.scheExtra
 
   // the scheduler issues instructions to function units
-  scheduler.io.issue <> fuBlock.io.issue
+  scheduler.io.issue <> fuBlock.io.issue ++ io.issue.getOrElse(Seq())
   if (scheduler.io.fmaMid.isDefined) {
     scheduler.io.fmaMid.get <> fuBlock.io.fmaMid.get
   }

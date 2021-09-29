@@ -106,7 +106,7 @@ class Dispatch(implicit p: Parameters) extends XSModule {
   lsDq.io.flush <> io.flush
 
   // Int dispatch queue to Int reservation stations
-  io.dispatch <> intDq.io.deq ++ fpDq.io.deq ++ lsDq.io.deq
+  io.dispatch <> intDq.io.deq ++ lsDq.io.deq ++ fpDq.io.deq
   io.ctrlInfo <> DontCare
   io.ctrlInfo.intdqFull := intDq.io.dqFull
   io.ctrlInfo.fpdqFull := fpDq.io.dqFull

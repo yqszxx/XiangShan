@@ -86,7 +86,18 @@ class Scheduler(
 )(implicit p: Parameters) extends LazyModule with HasXSParameter with HasExuWbMappingHelper {
   val numDpPorts = dpPorts.length
   val dpExuConfigs = dpPorts.map(port => port.map(_._1).map(configs(_)._1))
-  val dispatch2 = LazyModule(new Dispatch2Rs(dpExuConfigs))
+  def getDispatch2 = {
+    if (dpExuConfigs.length > exuParameters.AluCnt) {
+      val intDispatch = LazyModule(new Dispatch2Rs(dpExuConfigs.take(exuParameters.AluCnt)))
+      val lsDispatch = LazyModule(new Dispatch2Rs(dpExuConfigs.drop(exuParameters.AluCnt)))
+      Seq(intDispatch, lsDispatch)
+    }
+    else {
+      val fpDispatch = LazyModule(new Dispatch2Rs(dpExuConfigs))
+      Seq(fpDispatch)
+    }
+  }
+  val dispatch2 = getDispatch2
 
   // regfile parameters: overall read and write ports
   val numIntRfWritePorts = intRfWbPorts.length
@@ -151,7 +162,6 @@ class SchedulerImp(outer: Scheduler) extends LazyModuleImp(outer) with HasXSPara
   val intRfConfig = (outer.numIntRfReadPorts > 0 && outer.hasIntRf, outer.numIntRfReadPorts, intRfWritePorts)
   val fpRfConfig = (outer.numFpRfReadPorts > 0 && outer.hasFpRf, outer.numFpRfReadPorts, fpRfWritePorts)
 
-  val dispatch2 = outer.dispatch2.module
   val rs_all = outer.reservationStations
 
   // print rs info
@@ -211,7 +221,7 @@ class SchedulerImp(outer: Scheduler) extends LazyModuleImp(outer) with HasXSPara
     // dispatch and issue ports
     // val allocate = Vec(outer.numDpPorts, Flipped(DecoupledIO(new MicroOp)))
     val allocPregs = Vec(RenameWidth, Input(new ResetPregStateReq))
-    val in = Vec(dpParams.IntDqDeqWidth, Flipped(DecoupledIO(new MicroOp)))
+    val in = Vec(dpParams.IntDqDeqWidth * outer.dispatch2.length, Flipped(DecoupledIO(new MicroOp)))
     val issue = Vec(outer.numIssuePorts, DecoupledIO(new ExuInput))
     val fastUopOut = Vec(outer.numIssuePorts, ValidIO(new MicroOp))
     // wakeup-related ports
@@ -222,12 +232,12 @@ class SchedulerImp(outer: Scheduler) extends LazyModuleImp(outer) with HasXSPara
     val fmaMid = if (numFma > 0) Some(Vec(numFma, Flipped(new FMAMidResultIO))) else None
   })
 
-  val readIntState = if (dispatch2.io.readIntState.isDefined) Some(dispatch2.io.readIntState.get.cloneType) else None
-  val readFpState = if (dispatch2.io.readFpState.isDefined) Some(dispatch2.io.readFpState.get.cloneType) else None
+  val dispatch2 = outer.dispatch2.map(_.module)
 
-  dispatch2.io.in <> io.in
-  if (dispatch2.io.readIntState.isDefined) {
-    val busyTable = Module(new BusyTable(dispatch2.io.readIntState.get.length, intRfWritePorts))
+  io.in <> dispatch2.flatMap(_.io.in)
+  val readIntState = dispatch2.flatMap(_.io.readIntState.getOrElse(Seq()))
+  if (readIntState.length > 0) {
+    val busyTable = Module(new BusyTable(readIntState.length, intRfWritePorts))
     busyTable.io.flush := io.flush
     busyTable.io.allocPregs.zip(io.allocPregs).foreach{ case (pregAlloc, allocReq) =>
       pregAlloc.valid := allocReq.isInt
@@ -237,10 +247,11 @@ class SchedulerImp(outer: Scheduler) extends LazyModuleImp(outer) with HasXSPara
       pregWb.valid := exuWb.valid && exuWb.bits.uop.ctrl.rfWen
       pregWb.bits := exuWb.bits.uop.pdest
     }
-    dispatch2.io.readIntState.get <> busyTable.io.read
+    busyTable.io.read <> readIntState
   }
-  if (dispatch2.io.readFpState.isDefined) {
-    val busyTable = Module(new BusyTable(dispatch2.io.readFpState.get.length, fpRfWritePorts))
+  val readFpState = dispatch2.flatMap(_.io.readFpState.getOrElse(Seq()))
+  if (readFpState.length > 0) {
+    val busyTable = Module(new BusyTable(readFpState.length, fpRfWritePorts))
     busyTable.io.flush := io.flush
     busyTable.io.allocPregs.zip(io.allocPregs).foreach{ case (pregAlloc, allocReq) =>
       pregAlloc.valid := allocReq.isFp
@@ -250,9 +261,9 @@ class SchedulerImp(outer: Scheduler) extends LazyModuleImp(outer) with HasXSPara
       pregWb.valid := exuWb.valid && exuWb.bits.uop.ctrl.fpWen
       pregWb.bits := exuWb.bits.uop.pdest
     }
-    dispatch2.io.readFpState.get <> busyTable.io.read
+    busyTable.io.read <> readFpState
   }
-  val allocate = dispatch2.io.out
+  val allocate = dispatch2.flatMap(_.io.out)
 
   if (io.fmaMid.isDefined) {
     io.fmaMid.get <> outer.reservationStations.flatMap(_.module.io.fmaMid.getOrElse(Seq()))
