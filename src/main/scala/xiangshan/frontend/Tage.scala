@@ -37,7 +37,8 @@ trait TageParams extends HasXSParameter with HasBPUParameter {
                        ( 256*8,    8,    8),
                        ( 256*8,   16,    8),
                        ( 128*8,   32,    9),
-                       ( 128*8,   64,    9))
+                       ( 128*8,   64,    9),
+                       ( 128*8,  128,   10))
                        // (  64,   64,   11),
                        // (  64,  101,   12),
                        // (  64,  160,   12),
@@ -143,7 +144,7 @@ class FakeTageTable()(implicit p: Parameters) extends TageModule {
 }
 
 trait TBTParams extends HasXSParameter {
-  val BtSize = 2048
+  val BtSize = 4096
   val bypassEntries = 4
 }
 
