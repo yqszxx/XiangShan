@@ -38,6 +38,13 @@ class Std(implicit p: Parameters) extends FunctionUnit {
   io.out.bits.data := io.in.bits.src(0)
 }
 
+class AmoData(implicit p: Parameters) extends FunctionUnit {
+  io.in.ready := true.B
+  io.out.valid := io.in.valid
+  io.out.bits.uop := io.in.bits.uop
+  io.out.bits.data := io.in.bits.src(0)
+}
+
 class MemBlock()(implicit p: Parameters) extends LazyModule {
 
   val dcache = LazyModule(new DCacheWrapper())

@@ -44,7 +44,7 @@ class Dispatch1(implicit p: Parameters) extends XSModule with HasExceptionNO {
     val enqRob = Flipped(new RobEnqIO)
     // enq Lsq
     val enqLsq = Flipped(new LsqEnqIO)
-    val allocPregs = Vec(RenameWidth, Output(new ReplayPregReq))
+    val allocPregs = Vec(RenameWidth, Output(new ResetPregStateReq))
     // to dispatch queue
     val toIntDq = new Bundle {
       val canAccept = Input(Bool())
