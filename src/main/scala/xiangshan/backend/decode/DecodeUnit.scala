@@ -241,7 +241,7 @@ object XDecode extends DecodeConstants {
     // SH2ADDU_W   -> List(SrcType.reg, SrcType.reg, SrcType.DC, FuType.alu, ALUOpType.sh2adduw, Y, N, N, N, N, N, N, SelImm.IMM_X),
     // SH3ADDU_W   -> List(SrcType.reg, SrcType.reg, SrcType.DC, FuType.alu, ALUOpType.sh3adduw, Y, N, N, N, N, N, N, SelImm.IMM_X),
     ADDU_W      -> List(SrcType.reg, SrcType.reg, SrcType.DC, FuType.alu, ALUOpType.adduw, Y, N, N, N, N, N, N, SelImm.IMM_X),
-    SLLIU_W     -> List(SrcType.reg, SrcType.imm, SrcType.DC, FuType.alu, ALUOpType.slliuw, Y, N, N, N, N, N, N, SelImm.IMM_I)
+    // SLLIU_W     -> List(SrcType.reg, SrcType.imm, SrcType.DC, FuType.alu, ALUOpType.slliuw, Y, N, N, N, N, N, N, SelImm.IMM_I)
   )
 }
 
