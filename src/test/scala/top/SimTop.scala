@@ -22,10 +22,13 @@ import chisel3._
 import device.{AXI4RAMWrapper, SimJTAG}
 import freechips.rocketchip.diplomacy.{DisableMonitors, LazyModule, LazyModuleImp}
 import utils.GTimer
-import xiangshan.{DebugOptions, DebugOptionsKey}
+import xiangshan.{DebugOptions, DebugOptionsKey, XSCoreParamsKey}
 import chipsalliance.rocketchip.config._
 import freechips.rocketchip.devices.debug._
 import difftest._
+import xstransforms.Dumper
+import system.SoCParamsKey
+import xiangshan.frontend.Composer
 
 class SimTop(implicit p: Parameters) extends Module {
   val debugOpts = p(DebugOptionsKey)
@@ -91,6 +94,56 @@ class SimTop(implicit p: Parameters) extends Module {
   ExcitingUtils.checkAndDisplay()
 }
 
+class TestB() extends Bundle {
+  val a = Input(UInt(3.W))
+  val b = Input(new Bundle {
+    val ba = Bool()
+    val bb = UInt(2.W)
+    val bc = Vec(4, UInt(1.W))
+  })
+  val c = Output(UInt())
+  val addr = Input(UInt(10.W))
+}
+
+class TestSub() extends Module {
+  val io = IO(new Bundle {
+    val i = Input(Bool())
+    val o = Output(Bool())
+  })
+
+  io.o := ~io.i
+}
+
+class Test() extends Module {
+  val io = IO(new TestB())
+
+  val r1 = RegNext(io.a)
+  val r2 = RegNext(io.b)
+
+  val mem = Mem(1024, UInt(2.W))
+
+  val sub = Module(new TestSub)
+  sub.io.i := io.a(0)
+
+  io.c := r1 ^ r2.asUInt() + sub.io.o - mem.read(io.addr)
+}
+
+class TestWrapper extends Module {
+  val io = IO(new TestB())
+  val t1 = Module(new Test())
+  io <> t1.io
+//  t1.io.a := io.a
+//  t2.io.a := io.a
+//  t3.io.a := io.a
+//  t1.io.b := io.b
+//  t2.io.b := io.b
+//  t3.io.b := io.b
+//  io.c := t1.io.c | t2.io.c | t3.io.c
+    Dumper.dump(t1)
+//  Dumper.dump(t2)
+  //  Dumper.dump(t3)
+}
+
 object SimTop extends App {
 
   override def main(args: Array[String]): Unit = {
@@ -100,6 +153,12 @@ object SimTop extends App {
       firrtlOpts,
       Seq(
         ChiselGeneratorAnnotation(() => DisableMonitors(p => new SimTop()(p))(config))
+
+//        ChiselGeneratorAnnotation(() => DisableMonitors(p => new Composer()(p.alterPartial({
+//          case XSCoreParamsKey => p(SoCParamsKey).cores.head
+//        })))(config))
+
+//        ChiselGeneratorAnnotation(() => new TestWrapper())
       )
     )
   }

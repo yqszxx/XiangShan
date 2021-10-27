@@ -16,11 +16,32 @@
 
 import os.Path
 import mill._
+import mill.define.Sources
+import mill.modules.Util
 import scalalib._
 import coursier.maven.MavenRepository
+import $file.dependencies.chisel3.build
+import $file.dependencies.firrtl.build
+
+val sv = "2.12.10"
+
+object myfirrtl extends dependencies.firrtl.build.firrtlCrossModule(sv) {
+  override def millSourcePath = os.pwd / "dependencies" / "firrtl"
+  override def ivyDeps = super.ivyDeps() ++ Agg(
+    ivy"com.lihaoyi::pprint:0.6.6"
+  )
+  override val checkSystemAntlr4Version = false
+  override val checkSystemProtocVersion = false
+}
+
+object mychisel3 extends dependencies.chisel3.build.chisel3CrossModule(sv) {
+  override def millSourcePath = os.pwd / "dependencies" / "chisel3"
+
+  def firrtlModule: Option[PublishModule] = Some(myfirrtl)
+}
 
 trait CommonModule extends ScalaModule {
-  override def scalaVersion = "2.12.10"
+  override def scalaVersion = sv
 
   override def scalacOptions = Seq("-Xsource:2.11")
 
@@ -36,11 +57,13 @@ trait CommonModule extends ScalaModule {
     )
   }
 
-}
+  override def scalacPluginClasspath = super.scalacPluginClasspath() ++ Agg(
+    mychisel3.plugin.jar()
+  )
 
-val chisel = Agg(
-  ivy"edu.berkeley.cs::chisel3:3.5.0-RC1"
-)
+  override def moduleDeps: Seq[ScalaModule] = Seq(mychisel3)
+
+}
 
 object `api-config-chipsalliance` extends CommonModule {
   override def millSourcePath = super.millSourcePath / "design" / "craft"
@@ -48,7 +71,7 @@ object `api-config-chipsalliance` extends CommonModule {
 
 object hardfloat extends SbtModule with CommonModule {
   override def millSourcePath = os.pwd / "berkeley-hardfloat"
-  override def ivyDeps = super.ivyDeps() ++ chisel
+  override def ivyDeps = super.ivyDeps()
 }
 
 object `rocket-chip` extends SbtModule with CommonModule {
@@ -56,7 +79,7 @@ object `rocket-chip` extends SbtModule with CommonModule {
   override def ivyDeps = super.ivyDeps() ++ Agg(
     ivy"${scalaOrganization()}:scala-reflect:${scalaVersion()}",
     ivy"org.json4s::json4s-jackson:3.6.1"
-  ) ++ chisel
+  )
 
   object macros extends SbtModule with CommonModule
 
@@ -68,7 +91,7 @@ object `rocket-chip` extends SbtModule with CommonModule {
 
 object huancun extends SbtModule with CommonModule {
 
-  override def ivyDeps = super.ivyDeps() ++ chisel
+  override def ivyDeps = super.ivyDeps()
 
   override def millSourcePath = super.millSourcePath
 
@@ -82,7 +105,7 @@ object chiseltest extends CommonModule with SbtModule {
     ivy"edu.berkeley.cs::treadle:1.3.0",
     ivy"org.scalatest::scalatest:3.2.0",
     ivy"com.lihaoyi::utest:0.7.4"
-  ) ++ chisel
+  )
   object test extends Tests {
     def ivyDeps = Agg(ivy"org.scalacheck::scalacheck:1.14.3")
     def testFrameworks = Seq("org.scalatest.tools.Framework")
@@ -91,11 +114,11 @@ object chiseltest extends CommonModule with SbtModule {
 
 object difftest extends SbtModule with CommonModule {
   override def millSourcePath = os.pwd / "difftest"
-  override def ivyDeps = super.ivyDeps() ++ chisel
+  override def ivyDeps = super.ivyDeps()
 }
 
 object fudian extends CommonModule with SbtModule {
-  override def ivyDeps = super.ivyDeps() ++ chisel
+  override def ivyDeps = super.ivyDeps()
 }
 
 object XiangShan extends CommonModule with SbtModule {
@@ -103,7 +126,7 @@ object XiangShan extends CommonModule with SbtModule {
 
   override def forkArgs = Seq("-Xmx64G", "-Xss256m")
 
-  override def ivyDeps = super.ivyDeps() ++ chisel
+  override def ivyDeps = super.ivyDeps()
   override def moduleDeps = super.moduleDeps ++ Seq(
     `rocket-chip`,
     chiseltest,

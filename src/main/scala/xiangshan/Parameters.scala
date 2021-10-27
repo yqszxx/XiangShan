@@ -24,9 +24,10 @@ import xiangshan.backend.dispatch.DispatchParameters
 import xiangshan.cache.DCacheParameters
 import xiangshan.cache.prefetch._
 import huancun.{CacheParameters, HCCacheParameters}
-import xiangshan.frontend.{BIM, BasePredictor, BranchPredictionResp, FTB, FakePredictor, ICacheParameters, MicroBTB, RAS, Tage, ITTage, Tage_SC}
-import xiangshan.cache.mmu.{TLBParameters, L2TLBParameters}
+import xiangshan.frontend.{BIM, BasePredictor, BranchPredictionResp, FTB, FakePredictor, ICacheParameters, ITTage, MicroBTB, RAS, Tage, Tage_SC}
+import xiangshan.cache.mmu.{L2TLBParameters, TLBParameters}
 import freechips.rocketchip.diplomacy.AddressSet
+import xstransforms.Dumper
 
 case object XSCoreParamsKey extends Field[XSCoreParameters]
 
@@ -73,6 +74,7 @@ case class XSCoreParameters
       val ubtb = Module(new MicroBTB()(p))
       val bim = Module(new BIM()(p))
       val tage = if (enableSC) { Module(new Tage_SC()(p)) } else { Module(new Tage()(p)) }
+      Dumper.dump(tage)
       val ras = Module(new RAS()(p))
       val ittage = Module(new ITTage()(p))
       // val tage = Module(new Tage()(p))
