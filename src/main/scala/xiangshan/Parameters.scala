@@ -74,7 +74,6 @@ case class XSCoreParameters
       val ubtb = Module(new MicroBTB()(p))
       val bim = Module(new BIM()(p))
       val tage = if (enableSC) { Module(new Tage_SC()(p)) } else { Module(new Tage()(p)) }
-      Dumper.dump(tage)
       val ras = Module(new RAS()(p))
       val ittage = Module(new ITTage()(p))
       // val tage = Module(new Tage()(p))

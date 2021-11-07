@@ -27,7 +27,8 @@ import freechips.rocketchip.tilelink._
 import freechips.rocketchip.util.BundleFieldBase
 import system.L1CacheErrorInfo
 import device.RAMHelper
-import huancun.{AliasField, AliasKey, PreferCacheField, PrefetchField, DirtyField}
+import huancun.{AliasField, AliasKey, DirtyField, PreferCacheField, PrefetchField}
+import xstransforms.Dumper
 
 // DCache specific parameters
 case class DCacheParameters
@@ -543,6 +544,8 @@ class DCacheWrapper()(implicit p: Parameters) extends LazyModule with HasXSParam
   }
 
   lazy val module = new LazyModuleImp(this) {
+    Dumper.dump(this)
+
     val io = IO(new DCacheIO)
     if (!useDcache) {
       // a fake dcache which uses dpi-c to access memory, only for debug usage!
